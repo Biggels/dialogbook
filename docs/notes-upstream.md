@@ -31,10 +31,72 @@ Its PyPI metadata declares no license, but `AnswerDotAI/ipymini` carries an Apac
 `LICENSE` file. The risk noted in the handoff is closed. We still default to `ipykernel`;
 the option is simply no longer blocked.
 
+## Resolved at M1
+
+### `atomic_save` cannot overwrite on Windows — the big one
+
+`aidialog.write_ipynb(dlg, path)` writes through fastcore's `atomic_save`, which finishes
+with `Path(tmp).rename(dest)`. On Windows `rename` raises `FileExistsError` when the
+destination exists, so **a dialog could be created but never saved again**. Every write
+after the first failed.
+
+`store.Store.save` therefore does its own atomic write: `write_ipynb(dlg)` with no
+filename returns the notebook JSON, which we put in a temp file beside the target and move
+into place with `os.replace` — atomic, and it overwrites, on every platform.
+
+### FastHTML infers the request method from `nested_name`, which closures break
+
+`@rt('/path')` on a handler named `patch` normally registers PATCH. The check is
+`nested_name(func) in all_meths`, and for a handler defined inside a factory function
+`nested_name` returns `create_app_patch`. That is not in `all_meths`, so inference falls
+back to `['get','post']` — silently. PATCH and DELETE routes answered 405 while looking
+completely correct.
+
+Since all routes live inside `create_app`, every one now passes `methods=` explicitly.
+Worth doing regardless: it puts the method next to the path.
+
+### fasthtml bundles only the htmx-4 SSE extension
+
+`htmx_exts` has `sse4` (for htmx 4) but no plain `sse`, while `fast_app` defaults to htmx
+2.0.7. Passing `exts='sse'` raises `KeyError`. We add
+`htmx-ext-sse@2.2.3` as a pinned `Script` header instead, and stay on htmx 2.
+
+Verified in a real browser: `sse-swap` + `hx-swap="beforeend"` appends chunks, and
+`sse-close="done"` closes the connection — the server sees exactly one `GET /stream` per
+run, so nothing re-executes. The `EventSource` error logged in the console on close is
+benign.
+
 ### `fasttransport` uses `httpx2`, not `httpx`
 
 `jupyasyncclient` talks HTTP through `fasttransport.AsyncTransport`, which imports
 `httpx2`. Plain `httpx` is not installed. Relevant if we ever need to share a client.
+(Starlette's `TestClient` works regardless.)
+
+## Our own bugs worth remembering
+
+### Two process leaks around server startup
+
+Both found by counting `jupyter_server` processes after a test run — sixteen had piled up.
+
+1. **Fire-and-forget warm-up.** Opening a dialog starts its kernel in a background task.
+   Shutdown did not know about those tasks, so it could finish while a spawn was still in
+   flight, and the process that appeared afterwards belonged to nobody. Cancelling is *not*
+   a fix: `asyncio.to_thread` keeps running after its awaiter is cancelled. Shutdown now
+   waits for them.
+2. **Unlocked `start()`.** Two dialogs opening at once both saw `running == False` and
+   each spawned a server; only one was ever tracked. `start()` now holds a lock and
+   re-checks a `_closed` flag after spawning.
+
+`tests/test_m1_lifecycle.py` asserts the process count directly, including the
+shutdown-during-startup ordering.
+
+### Textareas post CRLF
+
+Browser form submission converts newlines to `
+`, which went straight into cell
+sources. Normalised at the one place browser text enters (the PATCH route), so notebooks
+keep plain `
+` like every other tool writes.
 
 ## Open
 

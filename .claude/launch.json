@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dialogbook",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "-m", "dialogbook"],
+      "port": 5001
+    }
+  ]
+}

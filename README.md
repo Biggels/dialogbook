@@ -9,8 +9,21 @@ Upstream findings and breakage: [docs/notes-upstream.md](docs/notes-upstream.md)
 
 ## Status
 
-**M0 complete** — dependencies pinned, foundations verified on Windows + Python 3.12.
-Nothing is built yet; M1 (the walking skeleton) is next.
+**M1 complete** — the walking skeleton runs. List, create and open dialogs; add, edit,
+reorder, pin, hide and delete the three cell types; run code cells against a real Jupyter
+kernel with output streaming in over SSE; ask a prompt cell and watch the **stub** provider
+stream a canned reply. Everything saves to `.ipynb` as you go.
+
+Real kernel, stub model — no tokens are spent and no API key is needed. Next is M2,
+context assembly: today a prompt sends only its own text, which the stub reply reports
+back to you verbatim.
+
+```bash
+uv run python -m dialogbook
+```
+
+Then open http://127.0.0.1:5001. Dialogs live in `~/dialogbook/`
+(`DIALOGBOOK_WORKSPACE` overrides it).
 
 ## Develop
 
