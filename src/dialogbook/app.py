@@ -6,8 +6,12 @@ differs enough to keep them apart.
 """
 import asyncio
 import logging
+import socket
+from urllib.parse import quote
 
-from fasthtml.common import (EventStream, Div, RedirectResponse, Script, Span, Style,
+import psutil
+
+from fasthtml.common import (EventStream, Div, Link, RedirectResponse, Script, Span, Style,
                              fast_app, serve, sse_message)
 from monsterui.all import Theme
 
@@ -21,6 +25,13 @@ from .providers import Done, Failed, TextDelta, get_provider
 from .store import OpenDialogs, Store
 
 log = logging.getLogger('dialogbook.app')
+
+# Inline so there is no static route to serve, and no 404 on every page load.
+FAVICON = Link(rel='icon', href='data:image/svg+xml,' + quote(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+    '<rect width="16" height="16" rx="3" fill="#2563eb"/>'
+    '<rect x="3.5" y="3" width="9" height="10" rx="1" fill="#fff"/>'
+    '<rect x="3" y="3" width="2" height="10" rx="1" fill="#1e3a8a"/></svg>'))
 
 # htmx 2's SSE extension. fasthtml bundles only the htmx-4 build, so it is pinned here.
 SSE_EXT = Script(src='https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.3/sse.js')
@@ -114,7 +125,7 @@ def create_app(cfg=None, provider=None):
     # handler's name, but only via `nested_name`, which renders a closure-defined `patch`
     # as `create_app_patch` — not in `all_meths` — so inference silently falls back to
     # GET+POST and PATCH/DELETE 405. See docs/notes-upstream.md.
-    app, rt = fast_app(hdrs=(Theme.blue.headers(), SSE_EXT, STYLE), pico=False,
+    app, rt = fast_app(hdrs=(Theme.blue.headers(), FAVICON, SSE_EXT, STYLE), pico=False,
                        on_shutdown=[on_shutdown], title='dialogbook')
 
     # ------------------------------------------------------------ helpers
@@ -314,10 +325,44 @@ def create_app(cfg=None, provider=None):
 app = None
 
 
+def port_in_use(host, port):
+    "True if something is already listening on `host:port`."
+    with socket.socket() as s:
+        # No SO_REUSEADDR: on Windows it lets a second process bind a live port instead
+        # of failing, which is exactly the answer we must not get here.
+        try:
+            s.bind((host, port))
+            return False
+        except OSError:
+            return True
+
+
+def describe_listener(port):
+    "A human description of whatever holds `port`, for the error message. Best effort."
+    try:
+        for c in psutil.net_connections(kind='tcp'):
+            if c.laddr and c.laddr.port == port and c.status == 'LISTEN' and c.pid:
+                p = psutil.Process(c.pid)
+                # One line, bounded: a `python -c` holder carries its whole script here.
+                cmd = ' '.join(' '.join(p.cmdline()[:3]).split()) or p.name()
+                if len(cmd) > 70: cmd = cmd[:67] + '...'   # ASCII: this prints to a cp1252 console
+                return f' by pid {c.pid} ({cmd})'
+    except (psutil.Error, OSError, PermissionError):
+        pass
+    return ''
+
+
 def main():
     global app
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
     cfg = Config.from_env()
+    # Check before building anything: uvicorn reports the bind failure *after* printing
+    # "startup complete", so without this the user sees a link that was never going to work.
+    if port_in_use(cfg.host, cfg.port):
+        print(f'dialogbook: port {cfg.port} is already in use{describe_listener(cfg.port)}.\n'
+              f'Stop that process, or run on another port:\n'
+              f'    $env:DIALOGBOOK_PORT=5002; python -m dialogbook')
+        raise SystemExit(1)
     app = create_app(cfg)
     print(f'dialogbook: workspace {cfg.workspace}  ->  http://{cfg.host}:{cfg.port}')
     serve(app='app', appname='dialogbook.app', host=cfg.host, port=cfg.port, reload=False)
