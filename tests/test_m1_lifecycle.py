@@ -79,6 +79,40 @@ def test_concurrent_opens_start_exactly_one_server(tmp_path):
     assert jupyter_pids() - before == set()
 
 
+def test_a_crashed_run_is_reaped_by_the_next_one(tmp_path):
+    """Kill the app without letting it shut down; the next start must clean up.
+
+    This is not hypothetical — closing the terminal (or the preview pane) kills uvicorn
+    outright, `on_shutdown` never runs, and the jupyter child is left holding a port.
+    """
+    before = jupyter_pids()
+
+    async def crash():
+        server = JupyterServer(tmp_path)
+        await server.start()
+        server.proc = None          # forget the child, as a hard kill of the app would
+        return server.pidfile
+
+    pidfile = asyncio.run(crash())
+    assert pidfile.exists() and jupyter_pids() - before, 'a live orphan to reap'
+
+    assert JupyterServer(tmp_path).reap_orphan() is True
+    assert jupyter_pids() - before == set(), 'the orphan and its children are gone'
+    assert not pidfile.exists()
+
+
+def test_reaping_ignores_a_recycled_pid(tmp_path):
+    "A pid belonging to some unrelated process must never be killed."
+    import json
+    import os
+    server = JupyterServer(tmp_path)
+    me = psutil.Process(os.getpid())
+    server.pidfile.write_text(json.dumps({'pid': me.pid, 'create_time': me.create_time() - 500}))
+    assert server.reap_orphan() is False, 'creation time did not match, so it is not ours'
+    assert not server.pidfile.exists()
+    assert psutil.pid_exists(me.pid), 'and we are still alive'
+
+
 def test_a_closed_server_refuses_to_restart(tmp_path):
     async def go():
         server = JupyterServer(tmp_path)
