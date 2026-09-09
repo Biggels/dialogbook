@@ -11,6 +11,8 @@ from monsterui.all import render_md
 
 from aidialog.dialog import scode, snote, sprompt
 
+from .context import approx_tokens
+
 TYPE_LABEL = {snote: 'note', scode: 'code', sprompt: 'prompt'}
 
 # Cells are addressed by nbformat cell id, so HTMX can replace one without touching the rest.
@@ -72,6 +74,10 @@ def _toolbar(msg, did):
         run = [Button(label, cls='tb tb-run', title=title,
                       hx_post=f'/d/{did}/cells/{msg.id}/run', hx_target=f'#out-{msg.id}',
                       hx_swap='outerHTML')]
+    if msg.msg_type == sprompt:
+        run.append(Button('Context', cls='tb', title='Show exactly what will be sent',
+                          hx_get=f'/d/{did}/cells/{msg.id}/preview',
+                          hx_target=f'#preview-{msg.id}', hx_swap='outerHTML'))
     return Div(
         Span(TYPE_LABEL.get(msg.msg_type, msg.msg_type), cls=f'badge badge-{msg.msg_type}'),
         *run,
@@ -102,7 +108,7 @@ def cell(msg, did):
     "One message, in view mode."
     flags = ' '.join(f'is-{f}' for f, on in (('pinned', msg.pinned), ('hidden', msg.skipped)) if on)
     return Div(_toolbar(msg, did), _source_view(msg, did), outputs_view(msg),
-               add_bar(did, after=msg.id),
+               preview_slot(msg), add_bar(did, after=msg.id),
                id=cid(msg), cls=f'cell cell-{msg.msg_type} {flags}'.strip())
 
 
@@ -119,6 +125,7 @@ def cell_editor(msg, did):
                 cls='editor-actions'),
             hx_patch=f'/d/{did}/cells/{msg.id}', hx_target=f'#{cid(msg)}', hx_swap='outerHTML'),
         outputs_view(msg),
+        preview_slot(msg),
         add_bar(did, after=msg.id),
         id=cid(msg), cls=f'cell cell-{msg.msg_type} editing')
 
@@ -144,6 +151,44 @@ def streaming_outputs(msg, did):
                id=f'out-{msg.id}', cls='outputs streaming',
                hx_ext='sse', sse_connect=f'/d/{did}/cells/{msg.id}/stream',
                sse_swap='chunk', hx_swap='beforeend', sse_close='done')
+
+
+def context_preview(ctx, msg, did):
+    """Exactly what will be sent, turn by turn, with the accounting that produced it.
+
+    The point is that nothing about context assembly should be a matter of trust: if a
+    cell was dropped for budget or hidden, this says so and how much room it freed.
+    """
+    pct = min(100, round(100*ctx.tokens/ctx.budget)) if ctx.budget else 0
+    turns = []
+    for m in ctx.messages:
+        turns.append(Div(
+            Div(Span(m['role'], cls=f"role role-{m['role']}"),
+                Span(f"{approx_tokens(m['content']):,} tokens", cls='muted small'),
+                cls='turn-head'),
+            Pre(NotStr(_esc(m['content'])), cls='turn-body'),
+            cls='turn'))
+    if not turns: turns = [P('Nothing would be sent — this prompt is empty.', cls='muted')]
+
+    counts = f'{len({p.msg_id for p in ctx.parts})} cells included'
+    if ctx.evicted: counts += f' · {len(ctx.evicted)} evicted for budget'
+    if ctx.hidden: counts += f' · {len(ctx.hidden)} hidden'
+
+    return Div(
+        Div(Span('Context preview', cls='prev-title'),
+            Span(f'{ctx.tokens:,} / {ctx.budget:,} tokens', cls='muted small'),
+            Button('✕', cls='tb', title='Close preview',
+                   hx_get=f'/d/{did}/cells/{msg.id}/preview/close',
+                   hx_target=f'#preview-{msg.id}', hx_swap='outerHTML'),
+            cls='prev-head'),
+        Div(Div(cls='meter-fill', style=f'width:{pct}%'), cls='meter'),
+        (Div(f'⚠ {ctx.warning}', cls='prev-warn') if ctx.warning else ''),
+        P(counts, cls='muted small'),
+        *turns,
+        id=f'preview-{msg.id}', cls='preview')
+
+
+def preview_slot(msg): return Div(id=f'preview-{msg.id}')
 
 
 def stream_end(msg, did):

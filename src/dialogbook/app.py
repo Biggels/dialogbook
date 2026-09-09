@@ -65,6 +65,21 @@ body { max-width: 60rem; margin: 0 auto; padding: 1rem; }
 .pill { font-size:.75rem; color:var(--muted); }
 .spinner::after { content:'▍'; animation:blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity:0; } }
+.preview { border-top:1px solid var(--line); padding:.5rem .75rem; background:var(--code-bg); }
+.prev-head { display:flex; gap:.5rem; align-items:center; }
+.prev-title { font-weight:600; font-size:.85rem; margin-right:auto; }
+.prev-warn { color:#b45309; font-size:.82rem; margin:.35rem 0;
+             border-left:3px solid #b45309; padding-left:.5rem; }
+.meter { height:3px; background:var(--line); border-radius:2px; margin:.35rem 0; }
+.meter-fill { height:100%; background:var(--accent); border-radius:2px; }
+.turn { margin:.5rem 0; }
+.turn-head { display:flex; gap:.5rem; align-items:baseline; }
+.role { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; padding:.05rem .35rem;
+        border-radius:3px; background:var(--line); }
+.role-assistant { background:color-mix(in srgb, var(--accent) 30%, transparent); }
+.turn-body { font-family:ui-monospace,Consolas,monospace; font-size:.78rem; white-space:pre-wrap;
+             margin:.2rem 0 0; max-height:22rem; overflow:auto; background:transparent;
+             border:1px solid var(--line); border-radius:4px; padding:.4rem .5rem; }
 """)
 
 
@@ -212,6 +227,17 @@ def create_app(cfg=None, provider=None):
                        hx_swap_oob='outerHTML:#cells')
         return ui.cell(m, did)
 
+    @rt('/d/{did}/cells/{cid}/preview', methods='get')
+    async def get(did: str, cid: str):
+        "Exactly what an Ask would send, assembled fresh — never a cached view."
+        dlg, m = _msg(did, cid)
+        return ui.context_preview(assemble(dlg, m, budget=cfg.token_budget), m, did)
+
+    @rt('/d/{did}/cells/{cid}/preview/close', methods='get')
+    async def get(did: str, cid: str):
+        _, m = _msg(did, cid)
+        return ui.preview_slot(m)
+
     # ------------------------------------------------------------ running
 
     @rt('/d/{did}/cells/{cid}/run', methods='post')
@@ -255,8 +281,13 @@ def create_app(cfg=None, provider=None):
         "Stream a model reply into a prompt cell, then store it as the cell's output."
         text = ''
         try:
-            msgs = assemble(_dlg(did), m, budget=cfg.token_budget)
-            async for ev in provider.stream(msgs):
+            ctx = assemble(_dlg(did), m, budget=cfg.token_budget)
+            if ctx.warning:
+                log.warning('context for %s: %s', m.id, ctx.warning)
+                yield sse_message(Div(f'⚠ {ctx.warning}', cls='prev-warn'), event='chunk')
+            log.info('context for %s: %s tokens, %s evicted, %s hidden',
+                     m.id, ctx.tokens, len(ctx.evicted), len(ctx.hidden))
+            async for ev in provider.stream(ctx.messages):
                 if isinstance(ev, TextDelta):
                     text += ev.text
                     yield sse_message(Span(ev.text), event='chunk')

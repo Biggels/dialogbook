@@ -9,14 +9,19 @@ Upstream findings and breakage: [docs/notes-upstream.md](docs/notes-upstream.md)
 
 ## Status
 
-**M1 complete** — the walking skeleton runs. List, create and open dialogs; add, edit,
+**M2 complete** — context assembly landed. List, create and open dialogs; add, edit,
 reorder, pin, hide and delete the three cell types; run code cells against a real Jupyter
 kernel with output streaming in over SSE; ask a prompt cell and watch the **stub** provider
 stream a canned reply. Everything saves to `.ipynb` as you go.
 
-Real kernel, stub model — no tokens are spent and no API key is needed. Next is M2,
-context assembly: today a prompt sends only its own text, which the stub reply reports
-back to you verbatim.
+A prompt now sends the dialog above it: notes as markdown, code cells as fenced blocks
+with their real outputs, and earlier prompts as genuine user/assistant turns. Hidden cells
+are excluded, pinned cells survive eviction, and each output is capped so one runaway loop
+cannot push everything else out. **Context** on any prompt cell shows exactly what will be
+sent, turn by turn, with the token accounting behind it.
+
+Real kernel, stub model — no tokens are spent and no API key is needed. Next is M3, the
+real Anthropic provider.
 
 ```bash
 uv run python -m dialogbook
