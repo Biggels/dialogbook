@@ -11,29 +11,24 @@
 
 ---
 
-## 0. Do these first (unresolved, carried over)
+## 0. Carried-over unknowns — RESOLVED 2026-09-09
 
-Two things could not be checked from the machine where this design was written. **Run
-these before M0 and report the results — do not assume, and do not silently skip.**
+Both were checked on this machine at M0. Findings recorded here; details in
+[`docs/notes-upstream.md`](../notes-upstream.md).
 
-- [ ] **Git / GitHub identity on this machine.** Run `cat ~/.ssh/config` and
-      `gh auth status`. On the work machine, `gh` was authed as the *work* account
-      (`rhaack-subseven`) and there was no `github.com` host entry in the SSH config, so
-      GitHub fell through to the default `~/.ssh/id_ed25519`. This machine is expected to
-      be set up for the *personal* GitHub account, but that is unverified. Report what
-      you find. If a personal account is not configured, say so and stop before creating
-      any remote — `git init` locally is enough to start, and the remote is deliberately
-      deferred. (`gh auth login` adds a second account; `gh auth switch` flips between
-      them without touching the SSH config.)
+- [x] **Git / GitHub identity on this machine.** Personal, and working. There is no
+      `~/.ssh/config` and none is needed: `ssh -T git@github.com` authenticates as
+      **`Biggels`** via the default `~/.ssh/id_ed25519`, and git's global identity is
+      `Biggels <haackra@gmail.com>`. The work machine's `rhaack-subseven` situation does
+      not carry over. Note that **`gh` is not installed here** — pushing over SSH needs
+      no extra tooling, but creating a repo through the API does.
 
-- [ ] **`ipymini` license.** Only matters if `ipymini` is ever preferred over
-      `ipykernel`. Its PyPI metadata declares no license. Check the GitHub repo for a
-      LICENSE file before taking the dependency. `ipykernel` is the default precisely so
-      this stays optional — if the license is unclear, use `ipykernel` and move on.
+- [x] **`ipymini` license.** Apache-2.0. The PyPI metadata declares none, but
+      `AnswerDotAI/ipymini` carries a full Apache-2.0 `LICENSE` file. The risk is closed.
+      `ipykernel` remains the default; the option is simply no longer blocked.
 
-Also confirm, per M0, that the three verified findings in section 2 still hold on
-**Windows + Python 3.12** — the original verification ran on Python 3.14 on a different
-machine.
+The three findings in section 2 were re-verified on **Windows 11 + Python 3.12.1**. All
+three hold. One assumption *outside* that list did not — see the Workspace row below.
 
 ---
 
@@ -109,12 +104,12 @@ lockfile and expect to write small shims.
 | **Frontend** | Fresh, minimal FastHTML + HTMX. Single user, localhost only. Monaco for cell editing (CDN fine). SSE for streaming. |
 | **Execution** | Headless stock `jupyter server` as a managed subprocess, driven by `jupyasyncclient`. One kernel per open dialog. Start with `ipykernel`. (Talking to kernels directly via `jupyter_client` and skipping HTTP loses `jupyasyncclient`'s reconnect logic and the cells API — revisit only if the subprocess becomes painful.) |
 | **Kernel lifetime** | Started on dialog open. Stopped **only** on explicit close, explicit restart, or app shutdown. **No idle timeout** — silently killing a kernel destroys accumulated state, the one thing a notebook must never do. One Python process per open dialog is acceptable for a single user. |
-| **Workspace** | One flat configured directory (e.g. `~/dialogbook/`) of `.ipynb` files, filename derived from title. Kernel cwd = that directory, so relative paths in code cells resolve predictably. Foldering deferred. |
+| **Workspace** | `C:\Users\biggels\dialogbook` (confirmed 2026-09-09) — one flat directory of `.ipynb` files, filename derived from title. Kernel cwd = that directory, so relative paths in code cells resolve predictably. **Correction:** `ServerApp.root_dir` does *not* set kernel cwd; the server subprocess must be spawned with `cwd=<workspace>`. Foldering deferred. |
 | **Persistence** | `aidialog` in memory, `.ipynb` on disk — every dialog stays openable in JupyterLab or VS Code as a fallback, and compatible with Solveit's own exports. |
 | **Models** | Anthropic via `claudette` first; OpenAI via the official SDK second. Keys from environment variables. A single configured model is fine for the MVP; per-dialog selection later. |
 | **Token counting** | Approximate, `chars/4`. Zero latency, no API calls. Eviction only needs "roughly how full"; set the budget conservatively (~100k) to absorb error. Swappable behind one function. |
 | **Security** | Tool calls run arbitrary Python in the kernel with no sandbox. Acceptable for a personal tool bound to localhost. **Never expose beyond localhost without revisiting this.** |
-| **Git remote** | Deferred. `git init` locally. The work machine's `gh` is authed as `rhaack-subseven` and has no `github.com` SSH host entry; check the personal machine's `~/.ssh/config` and `gh auth status`. If needed, `gh auth login` adds a second account and `gh auth switch` flips between them without touching SSH config. |
+| **Git remote** | No longer deferred (2026-09-09): a personal remote was requested. SSH push works today as `Biggels`; only *creating* the repo needs API auth, and `gh` is not installed here. |
 
 ---
 
