@@ -92,11 +92,32 @@ shutdown-during-startup ordering.
 
 ### Textareas post CRLF
 
-Browser form submission converts newlines to `
+Browser form submission converts newlines to `
+
 `, which went straight into cell
 sources. Normalised at the one place browser text enters (the PATCH route), so notebooks
 keep plain `
 ` like every other tool writes.
+
+## Confirmed at M3 (Anthropic SDK)
+
+Verified against the live API on this account, `anthropic` 1.5.0:
+
+- **Adaptive thinking with `display: "summarized"` streams real reasoning** as
+  `thinking_delta` events ahead of the answer. Left at the default the thinking text comes
+  back empty, which in a streaming UI reads as a long unexplained pause — so the display is
+  set explicitly. Reasoning is shown live and never persisted: the dialog is the context,
+  and reasoning is not part of the dialog.
+- **`budget_tokens` is gone** on current models; `output_config: {effort}` replaces it.
+- **Server-side refusal fallbacks work on this account** (`fallbacks: "default"` with beta
+  `server-side-fallback-2026-07-01`, on `client.beta.messages.stream`). The provider still
+  drops the parameter and retries once if a 400 names it, so an account without the
+  entitlement loses the feature rather than every prompt.
+- **`stop_reason: "refusal"` is an HTTP 200** with no usable content, so it must be checked
+  before reading content blocks.
+- The provider module is `providers/anthropic.py` and does `import anthropic`. Absolute
+  imports mean that resolves to the installed SDK, not itself — deliberate, but worth
+  knowing before anyone "fixes" it.
 
 ## Open
 

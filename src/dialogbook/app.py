@@ -21,7 +21,7 @@ from . import ui
 from .config import Config
 from .context import assemble
 from .kernels import STARTUP_GRACE, JupyterServer, KernelRegistry
-from .providers import Done, Failed, TextDelta, get_provider
+from .providers import Done, Failed, TextDelta, Thinking, provider_for
 from .store import OpenDialogs, Store
 
 log = logging.getLogger('dialogbook.app')
@@ -88,6 +88,7 @@ body { max-width: 60rem; margin: 0 auto; padding: 1rem; }
 .role { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; padding:.05rem .35rem;
         border-radius:3px; background:var(--line); }
 .role-assistant { background:color-mix(in srgb, var(--accent) 30%, transparent); }
+.thinking { color:var(--muted); font-style:italic; font-size:.85em; }
 .turn-body { font-family:ui-monospace,Consolas,monospace; font-size:.78rem; white-space:pre-wrap;
              margin:.2rem 0 0; max-height:22rem; overflow:auto; background:transparent;
              border:1px solid var(--line); border-radius:4px; padding:.4rem .5rem; }
@@ -102,7 +103,7 @@ def create_app(cfg=None, provider=None):
     dialogs = OpenDialogs(store, debounce=cfg.save_debounce)
     server = JupyterServer(cfg.workspace)
     kernels = KernelRegistry(server, kernel_name=cfg.kernel_name)
-    provider = provider if provider is not None else get_provider('stub')
+    provider = provider if provider is not None else provider_for(cfg)
 
     # Background kernel warm-ups. They must be waited for, not cancelled: cancelling an
     # `asyncio.to_thread` does not stop the thread, so a subprocess spawned a moment later
@@ -302,11 +303,18 @@ def create_app(cfg=None, provider=None):
                 if isinstance(ev, TextDelta):
                     text += ev.text
                     yield sse_message(Span(ev.text), event='chunk')
+                elif isinstance(ev, Thinking):
+                    # Shown live, never stored: reasoning is not part of the dialog, and so
+                    # is not part of the context the next prompt assembles.
+                    yield sse_message(Span(ev.text, cls='thinking'), event='chunk')
                 elif isinstance(ev, Failed):
-                    text += f'\n\n**Error:** {ev.message}'
-                    yield sse_message(Div(ev.message, cls='out-error'), event='chunk')
+                    detail = f'\n\n{ev.detail}' if ev.detail else ''
+                    text += f'\n\n**{ev.message}**{detail}'
+                    yield sse_message(Div(ev.message,
+                                          Div(ev.detail, cls='small') if ev.detail else '',
+                                          cls='out-error'), event='chunk')
                 elif isinstance(ev, Done):
-                    log.info('prompt %s finished: %s', m.id, ev.usage)
+                    log.info('prompt %s finished: %s %s', m.id, ev.stop_reason, ev.usage)
         except Exception as e:
             log.exception('prompting cell %s', m.id)
             text += f'\n\n**Error:** {e}'
@@ -365,4 +373,7 @@ def main():
         raise SystemExit(1)
     app = create_app(cfg)
     print(f'dialogbook: workspace {cfg.workspace}  ->  http://{cfg.host}:{cfg.port}')
+    print(f'dialogbook: provider {app.state.provider.name}'
+          + (f' ({cfg.model}, effort {cfg.effort})' if app.state.provider.name == 'anthropic'
+             else ' - no tokens will be spent'))
     serve(app='app', appname='dialogbook.app', host=cfg.host, port=cfg.port, reload=False)

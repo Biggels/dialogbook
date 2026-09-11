@@ -9,7 +9,7 @@ Upstream findings and breakage: [docs/notes-upstream.md](docs/notes-upstream.md)
 
 ## Status
 
-**M2 complete** — context assembly landed. List, create and open dialogs; add, edit,
+**M3 complete** — it talks to a real model. List, create and open dialogs; add, edit,
 reorder, pin, hide and delete the three cell types; run code cells against a real Jupyter
 kernel with output streaming in over SSE; ask a prompt cell and watch the **stub** provider
 stream a canned reply. Everything saves to `.ipynb` as you go.
@@ -20,8 +20,29 @@ are excluded, pinned cells survive eviction, and each output is capped so one ru
 cannot push everything else out. **Context** on any prompt cell shows exactly what will be
 sent, turn by turn, with the token accounting behind it.
 
-Real kernel, stub model — no tokens are spent and no API key is needed. Next is M3, the
-real Anthropic provider.
+Prompts go to **Claude via the official `anthropic` SDK** (`claude-opus-5` by default,
+adaptive thinking, effort `high`). Reasoning streams into the cell as it happens, in muted
+italics, and is discarded when the answer lands — the dialog is the context, and reasoning
+is not part of the dialog.
+
+Put `ANTHROPIC_API_KEY` in a `.env` beside the project. With no key the app degrades to the
+stub provider and still runs: the kernel and the notebook are useful on their own.
+
+Next is M4, tools — Python functions defined in a dialog, callable by the model, executing
+in that dialog's kernel.
+
+### Environment
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | From `.env`. Without it, the stub provider is used. |
+| `DIALOGBOOK_PROVIDER` | `anthropic` | `stub` to work without spending anything. |
+| `DIALOGBOOK_MODEL` | `claude-opus-5` | |
+| `DIALOGBOOK_EFFORT` | `high` | `low` / `medium` / `high` / `xhigh` / `max`. |
+| `DIALOGBOOK_MAX_TOKENS` | `64000` | A ceiling, not a target — you pay for what is generated. |
+| `DIALOGBOOK_TOKEN_BUDGET` | `100000` | Context budget, estimated at chars/4. |
+| `DIALOGBOOK_WORKSPACE` | `~/dialogbook` | |
+| `DIALOGBOOK_PORT` | `5001` | |
 
 ```bash
 uv run python -m dialogbook

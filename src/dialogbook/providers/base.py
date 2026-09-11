@@ -19,6 +19,17 @@ class TextDelta:
 
 
 @dataclass(frozen=True)
+class Thinking:
+    """A chunk of the model's summarised reasoning.
+
+    Shown while a run is in flight and then discarded: the dialog *is* the context, and
+    reasoning is not part of the dialog. Without this the UI would sit blank through the
+    whole thinking phase, which on a reasoning model is most of the wait.
+    """
+    text: str
+
+
+@dataclass(frozen=True)
 class ToolUse:
     "The model asked to call a tool. The caller runs it and feeds back a `ToolResult`."
     id: str
@@ -48,7 +59,7 @@ class Failed:
     detail: str = ''
 
 
-Event = TextDelta | ToolUse | ToolResult | Done | Failed
+Event = TextDelta | Thinking | ToolUse | ToolResult | Done | Failed
 
 
 @runtime_checkable
